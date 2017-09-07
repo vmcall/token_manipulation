@@ -136,12 +136,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="ntdll.hpp" />
+    <ClInclude Include="safe_handle.hpp" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="token_manipulation.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ntdll.cpp" />
+    <ClCompile Include="safe_handle.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>

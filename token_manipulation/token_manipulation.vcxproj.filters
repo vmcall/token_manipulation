@@ -27,6 +27,9 @@
     <ClInclude Include="ntdll.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="safe_handle.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -39,6 +42,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ntdll.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="safe_handle.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
