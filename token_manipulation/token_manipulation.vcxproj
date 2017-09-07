@@ -135,9 +135,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <Text Include="ReadMe.txt" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="ntdll.hpp" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />

