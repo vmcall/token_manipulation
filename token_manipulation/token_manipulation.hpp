@@ -5,6 +5,7 @@ namespace token_manipulation
 {
 	bool run();
 	bool find_elevated_process(safe_handle& process_handle);
+	bool open_process_token(safe_handle& process_handle, ACCESS_MASK desired_access, safe_handle& token_handle);
 	bool duplicate_token(safe_handle& token_handle, ACCESS_MASK desired_access, _TOKEN_TYPE token_type, safe_handle& duplicated_token);
 	bool create_restricted_token(safe_handle& token_handle, safe_handle& restricted_token);
 	bool is_process_admin(HANDLE process_handle);
