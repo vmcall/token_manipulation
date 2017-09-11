@@ -1,5 +1,5 @@
 # token_manipulation
-Bypass User Account Control by manipulating tokens (will bypass AlwaysNotify)
+Bypass User Account Control by manipulating tokens (*can* bypass AlwaysNotify)
 
 # Credits
 + https://tyranidslair.blogspot.com/2017/05/reading-your-way-around-uac-part-1.html
